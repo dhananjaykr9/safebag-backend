@@ -21,8 +21,7 @@ SOS! I need immediate help.
 My live location is being shared now.
 
 Event Type: {event_type}
-Live Location:
-https://maps.google.com/?q={lat},{lon}
+Live Location: https://www.google.com/maps?q={lat},{lon}
 """
 
     for number in EMERGENCY_CONTACTS:
