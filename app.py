@@ -106,5 +106,17 @@ def get_police():
     ]
     return jsonify({"stations": police})
 
+@app.route('/escalate', methods=['POST'])
+def escalate():
+    data = request.get_json()
+    lat = data.get('latitude')
+    lon = data.get('longitude')
+    event = data.get('event_type')
+    
+    # YOUR SMS GATEWAY LOGIC HERE (Twilio, Vonage, etc.)
+    print(f"SENDING SMS: Emergency {event} at {lat}, {lon}")
+    
+    return jsonify({"status": "success", "message": "SMS Sent"}), 200
+    
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
