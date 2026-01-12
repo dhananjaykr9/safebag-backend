@@ -113,10 +113,20 @@ def escalate():
     lon = data.get('longitude')
     event = data.get('event_type')
     
-    # YOUR SMS GATEWAY LOGIC HERE (Twilio, Vonage, etc.)
-    print(f"SENDING SMS: Emergency {event} at {lat}, {lon}")
+    print(f"🚨 ESCALATING: Emergency {event} at {lat}, {lon}")
     
-    return jsonify({"status": "success", "message": "SMS Sent"}), 200
+    try:
+        send_sms_alert(lat, lon, event)
+    except Exception as e:
+        print(f"SMS Function Error: {e}")
+
+    try:
+        patch_url = f"{FIREBASE_BASE}/latest_events/{DEVICE_ID}.json"
+        requests.patch(patch_url, json={"acknowledged": True})
+    except Exception as e:
+        print(f"Firebase Update Error: {e}")
+    
+    return jsonify({"status": "success", "message": "SMS Sent and State Acknowledged"}), 200
     
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
