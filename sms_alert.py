@@ -15,9 +15,14 @@ EMERGENCY_CONTACTS = [
 client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 def send_sms_alert(lat, lon, event_type):
-    message_body = f"""🚨 SAFE BAG ALERT 🚨
-Event: {event_type}
-Location: https://maps.google.com/?q={lat},{lon}
+    message_body = f"""🚨 ALERT WITH LIVE LOCATION 🚨
+
+SOS! I need immediate help.
+My live location is being shared now.
+
+Event Type: {event_type}
+Live Location:
+https://maps.google.com/?q={lat},{lon}
 """
 
     for number in EMERGENCY_CONTACTS:
@@ -30,3 +35,4 @@ Location: https://maps.google.com/?q={lat},{lon}
             print(f"SMS sent to {number} | SID={msg.sid}")
         except Exception as e:
             print(f"Failed to send SMS to {number}: {e}")
+
