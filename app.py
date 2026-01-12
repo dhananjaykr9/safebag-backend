@@ -8,6 +8,10 @@ from main import predict   # 🔹 ML model function import
 load_dotenv()
 
 app = Flask(__name__)
+@app.route("/")
+def home():
+    return "SafeBag Backend Running"
+
 
 FIREBASE_BASE = os.getenv("FIREBASE_URL")
 DEVICE_ID = "handbag_001"
