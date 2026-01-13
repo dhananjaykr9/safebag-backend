@@ -3,11 +3,24 @@ import joblib, datetime, numpy as np
 risk_model = joblib.load("models/risk_model.pkl")
 crime_model = joblib.load("models/crime_type_model.pkl")
 
-def prepare_features(lat, lon):
-    return [[0, lat, lon, datetime.datetime.now().hour, 0, 0]]
-
 def predict(lat, lon):
-    X = prepare_features(lat, lon)
-    risk = risk_model["model"].predict(X)[0]
-    crime = crime_model["model"].predict(X)[0]
-    return str(risk), str(crime)
+    now = datetime.datetime.now()
+    hour = now.hour
+    day_of_week = now.weekday() # 0 is Monday, 6 is Sunday
+    
+    # Match the feature shape exactly: [Ward, Lat, Lon, Hour, Day, Slot]
+    X = [[0, float(lat), float(lon), int(hour), int(day_of_week), 0]]
+    
+    # Use the same logic as Streamlit to handle the dictionary structure of your .pkl
+    risk_pred = risk_model["model"].predict(X)[0]
+    crime_pred = crime_model["model"].predict(X)[0]
+    
+    # If the models use LabelEncoders, we need to decode them
+    try:
+        risk_label = risk_model["le_risk"].inverse_transform([risk_pred])[0]
+        crime_label = crime_model["le_target"].inverse_transform([crime_pred])[0]
+    except:
+        risk_label = risk_pred
+        crime_label = crime_pred
+        
+    return str(risk_label), str(crime_label)
