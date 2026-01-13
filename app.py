@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from sms_alert import send_sms_alert
 from routing import get_route
-from main import predict   # ML model function import
+from ml_engine import predict   
 
 load_dotenv()
 
