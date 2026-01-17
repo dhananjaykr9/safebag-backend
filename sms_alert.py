@@ -5,49 +5,53 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuration from .env file
+# Configuration
 ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID")
 AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE = os.getenv("TWILIO_PHONE")
 
-# List of emergency contacts
 EMERGENCY_CONTACTS = [
     "+919595167618"
 ]
 
-# Initialize Twilio Client
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
+# Initialize Twilio Client (You can comment this out if you stop using it entirely)
+# client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 def send_sms_alert(lat, lon, event_type):
     """
-    Sends a high-priority SMS alert via Twilio based on the event type.
+    LOGS the emergency alert to the server console/database.
+    Does NOT send an SMS (handled by Android App).
     """
     
-    # 1. Human-readable event mapping
-    event_messages = {
-        "USER_SOS": "SOS BUTTON PRESSED! I am in immediate danger and need help.",
-        "AUTO_UNUSUAL_ACTIVITY": "UNUSUAL ACTIVITY DETECTED! My handbag has detected potential theft or a fall.",
-        "MANUAL_SOS": "MANUAL SOS triggered from my smartphone app.",
-        "MOBILE_APP": "SOS triggered directly from the mobile interface."
-    }
-
-    # Default message if event_type doesn't match the dictionary
-    description = event_messages.get(event_type, f"Emergency Alert detected: {event_type}")
-    
-    # Get current time for the message
+    # 1. Get Timestamp
     timestamp = datetime.now().strftime("%I:%M %p")
 
-    # 2. Build the Message Body
-    # Using the standard Google Maps URL format for universal compatibility
-    message_body = f"""🚨 SAFE BAG: EMERGENCY 🚨
+    # 2. Build the Message (Just for logging purposes now)
+    event_messages = {
+        "USER_SOS": "SOS BUTTON PRESSED!",
+        "AUTO_UNUSUAL_ACTIVITY": "UNUSUAL ACTIVITY DETECTED!",
+        "MANUAL_SOS": "MANUAL SOS (Native App)",
+        # Handle the specific tag we send from Android now:
+        "MANUAL_SOS_SMS_SENT": "User sent SOS via Native SMS",
+        "USER_SOS_SMS_SENT": "User sent SOS via Native SMS"
+    }
 
-{description}
+    description = event_messages.get(event_type, f"Emergency: {event_type}")
+    
+    # 3. LOGGING ONLY (No SMS Sent)
+    print("="*40)
+    print(f"🚨 [SERVER LOG] EMERGENCY REPORTED")
+    print(f"⏰ Time: {timestamp}")
+    print(f"📍 Location: {lat}, {lon}")
+    print(f"⚠️ Event: {description}")
+    print("ℹ️ Action: SMS sending skipped (Handled by User's Mobile App)")
+    print("="*40)
 
-Time: {timestamp}
-📍 My Live Location:
-https://www.google.com/maps?q={lat},{lon}
-"""
-    # 3. Send to all contacts
+    # --- DISABLED TWILIO SECTION ---
+    # The code below is commented out to save costs and prevent double SMS.
+    """
+    message_body = f"🚨 SAFE BAG ALERT: {description}\nLoc: http://maps.google.com/?q={lat},{lon}"
+    
     for number in EMERGENCY_CONTACTS:
         try:
             msg = client.messages.create(
@@ -55,6 +59,8 @@ https://www.google.com/maps?q={lat},{lon}
                 from_=TWILIO_PHONE,
                 to=number
             )
-            print(f"[{timestamp}] SMS sent to {number} | SID: {msg.sid} | Type: {event_type}")
+            print(f"Sent to {number}")
         except Exception as e:
-            print(f"[{timestamp}] Failed to send SMS to {number}: {e}")
+            print(f"Error: {e}")
+    """
+    # -------------------------------
