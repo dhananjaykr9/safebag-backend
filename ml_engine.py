@@ -6,10 +6,15 @@ from scipy.spatial import cKDTree
 import os
 
 # --- 1. SETUP: Load Data & Models ---
-risk_artifact = joblib.load("models/risk_model.pkl")
-crime_artifact = joblib.load("models/crime_type_model.pkl")
+try:
+    risk_artifact = joblib.load("models/risk_model.pkl")
+    crime_artifact = joblib.load("models/crime_type_model.pkl")
+    print("✅ Models Loaded Successfully.")
+except Exception as e:
+    print(f"🔥 CRITICAL ERROR: Models not found. {e}")
+    risk_artifact = None
 
-# Load Ward Data
+# Load Ward Data for Interpolation
 tree = None
 ward_df = None
 try:
@@ -17,17 +22,17 @@ try:
         ward_df = pd.read_csv('data/nagpur_ward_centroids.csv')
         ward_coords = ward_df[['Latitude', 'Longitude']].values
         tree = cKDTree(ward_coords)
-        print("✅ Ward Data Loaded.")
+        print("✅ Ward Data & Spatial Tree Loaded.")
     else:
-        print("⚠️ CSV not found.")
+        print("⚠️ Warning: CSV not found at data/nagpur_ward_centroids.csv")
 except Exception as e:
     print(f"⚠️ Error loading CSV: {e}")
 
-# --- 2. CONFIGURATION ---
+# --- 2. CONFIGURATION: Safe Havens ---
 SAFE_HAVENS = [
     {"name": "Sitabuldi Police Station", "lat": 21.1498, "lon": 79.0806},
     {"name": "Sadar Police Station", "lat": 21.1610, "lon": 79.0880},
-    {"name": "General Hospital", "lat": 21.1450, "lon": 79.0900},
+    {"name": "Government Medical College", "lat": 21.1450, "lon": 79.0900},
 ]
 
 def get_timeslot(hour):
@@ -37,9 +42,9 @@ def get_timeslot(hour):
     return "Evening"
 
 def get_time_multiplier(hour):
-    if 6 <= hour < 19: return 0.8   # Day
-    if 19 <= hour < 23: return 1.0  # Evening
-    return 1.5                      # Late Night
+    if 6 <= hour < 19: return 0.8   # Day (Safer)
+    if 19 <= hour < 23: return 1.0  # Evening (Normal)
+    return 1.5                      # Late Night (Riskier)
 
 def is_near_safe_haven(lat, lon, threshold_km=0.2):
     for haven in SAFE_HAVENS:
@@ -48,133 +53,132 @@ def is_near_safe_haven(lat, lon, threshold_km=0.2):
             return True, haven['name']
     return False, None
 
-# --- 3. HELPER: Get Probability of "Safe" ---
-def get_safe_prob(model, features, le_risk):
+# --- 3. HELPER: Calculate Safety Probability ---
+def get_safety_score_for_features(model, features, le_risk):
     """
-    Robustly finds the probability of being 'Low' or 'Moderate' risk.
-    Handles both Integer classes (0,1,2) and String classes ('Low', 'High').
+    Robust function to get 'Safety Score' (0.0 to 1.0).
+    Handles both Integer classes (0,1,2) and String classes ('Low','High').
     """
-    probas = model.predict_proba([features])[0]
-    classes = list(model.classes_) # e.g. [0, 1, 2, 3] or ['Critical', 'High'...]
-    
-    safe_score = 0.0
-    
-    # We look for "Low" and "Moderate" to add to safety
-    target_labels = ["Low", "Moderate"]
-    
-    for label in target_labels:
-        target_idx = -1
+    try:
+        probas = model.predict_proba([features])[0]
+        classes = list(model.classes_)
         
-        # Case A: Model uses Strings directly
-        if label in classes:
-            target_idx = classes.index(label)
-            
-        # Case B: Model uses Integers (Need LabelEncoder)
-        elif le_risk:
-            try:
-                # Convert "Low" -> Integer (e.g., 2)
-                enc_val = le_risk.transform([label])[0]
-                if enc_val in classes:
-                    target_idx = classes.index(enc_val)
-            except:
-                pass
+        safe_prob = 0.0
         
-        # If we found the column index, add its probability
-        if target_idx != -1:
-            weight = 1.0 if label == "Low" else 0.5 # Moderate adds half safety
-            safe_score += probas[target_idx] * weight
-
-    # Fallback: If score is still 0 (maybe model only predicts High/Critical?)
-    # Calculate 1.0 - (Probability of Critical)
-    if safe_score == 0.0:
-        # Try to find "Critical" index
-        crit_idx = -1
-        if "Critical" in classes: 
-            crit_idx = classes.index("Critical")
-        elif le_risk:
-            try:
-                crit_val = le_risk.transform(["Critical"])[0]
-                if crit_val in classes: crit_idx = classes.index(crit_val)
-            except: pass
+        # Strategy 1: Look for explicit "Low" or "Moderate" labels
+        targets = ["Low", "Moderate"]
+        found = False
+        
+        for label in targets:
+            idx = -1
+            if label in classes:
+                idx = classes.index(label)
+            elif le_risk:
+                try:
+                    # Try to encode the string "Low" to the integer expected by model
+                    enc_label = le_risk.transform([label])[0]
+                    if enc_label in classes:
+                        idx = classes.index(enc_label)
+                except: pass
             
-        if crit_idx != -1:
-            safe_score = 1.0 - probas[crit_idx]
-        else:
-            # Last resort: just use the max prob if it's not Critical
-            safe_score = 0.5 
+            if idx != -1:
+                weight = 1.0 if label == "Low" else 0.5
+                safe_prob += probas[idx] * weight
+                found = True
 
-    return safe_score
+        # Strategy 2: If we couldn't find "Low", calculate 1.0 - "Critical"
+        if not found or safe_prob == 0.0:
+            crit_idx = -1
+            if "Critical" in classes:
+                crit_idx = classes.index("Critical")
+            elif le_risk:
+                try:
+                    enc_crit = le_risk.transform(["Critical"])[0]
+                    if enc_crit in classes:
+                        crit_idx = classes.index(enc_crit)
+                except: pass
+            
+            if crit_idx != -1:
+                safe_prob = 1.0 - probas[crit_idx]
+            else:
+                # Strategy 3: Fallback (Just take the max probability if nothing else works)
+                safe_prob = np.max(probas)
 
-# --- 4. MAIN PREDICTION ENGINE ---
+        return safe_prob
+    except Exception as e:
+        print(f"Error calculating score: {e}")
+        return 0.5 # Default to moderate if math fails
+
+# --- 4. MAIN PREDICTION FUNCTION ---
 def predict(lat, lon):
-    # Check Safe Haven
+    # A. Check Safe Haven
     is_safe, haven_name = is_near_safe_haven(lat, lon)
     if is_safe:
         return "Low", "None", 0.99
 
-    # Prepare Features
+    # B. Prepare Features
     now = datetime.datetime.now()
     hour = now.hour
     day = now.strftime("%A")
     slot = get_timeslot(hour)
 
-    le_day = risk_artifact.get("le_day")
-    le_slot = risk_artifact.get("le_slot")
-    le_risk = risk_artifact.get("le_risk") # IMPORTANT: Get Risk LabelEncoder
-    
-    try:
-        day_enc = int(le_day.transform([day])[0]) if le_day else 0
-        slot_enc = int(le_slot.transform([slot])[0]) if le_slot else 0
-    except:
-        day_enc, slot_enc = 0, 0
+    if risk_artifact:
+        model = risk_artifact["model"]
+        le_day = risk_artifact.get("le_day")
+        le_slot = risk_artifact.get("le_slot")
+        le_risk = risk_artifact.get("le_risk") # Vital for decoding
+        
+        try:
+            day_enc = int(le_day.transform([day])[0]) if le_day else 0
+            slot_enc = int(le_slot.transform([slot])[0]) if le_slot else 0
+        except:
+            day_enc, slot_enc = 0, 0
+    else:
+        return "Unknown", "Unknown", 0.0
 
-    # 3-Ward Interpolation
+    # C. Interpolation (3-Ward Average)
     if tree is not None:
         distances, indices = tree.query([lat, lon], k=3)
         weights = 1 / (distances + 0.0001)
-        normalized_weights = weights / np.sum(weights)
+        norm_weights = weights / np.sum(weights)
         
-        total_safety_score = 0.0
-        risk_model = risk_artifact["model"]
+        total_safety = 0.0
         
         for i, idx in enumerate(indices):
-            ward_enc = 0 
+            ward_enc = 0
             if 'Ward_Encoded' in ward_df.columns:
                 ward_enc = ward_df.iloc[idx]['Ward_Encoded']
-
+            
             features = [ward_enc, float(lat), float(lon), int(hour), day_enc, slot_enc]
             
-            # --- FIX IS HERE: Use helper to get score ---
-            ward_safety = get_safe_prob(risk_model, features, le_risk)
+            # Get score for this specific ward point
+            score = get_safety_score_for_features(model, features, le_risk)
+            total_safety += score * norm_weights[i]
             
-            total_safety_score += ward_safety * normalized_weights[i]
-            
-        final_safety_prob = total_safety_score
-
+        final_safety = total_safety
     else:
-        # Fallback (Single Point)
+        # Fallback Single Point
         features = [0, float(lat), float(lon), int(hour), day_enc, slot_enc]
-        risk_model = risk_artifact["model"]
-        final_safety_prob = get_safe_prob(risk_model, features, le_risk)
+        final_safety = get_safety_score_for_features(model, features, le_risk)
 
-    # Time Multiplier
+    # D. Time Adjustment
     time_mult = get_time_multiplier(hour)
-    adjusted_safety = final_safety_prob / time_mult
+    adjusted_safety = final_safety / time_mult
     adjusted_safety = max(0.0, min(1.0, adjusted_safety))
 
-    # Labels
-    if adjusted_safety > 0.70: final_risk = "Low"
-    elif adjusted_safety > 0.40: final_risk = "Moderate"
-    elif adjusted_safety > 0.20: final_risk = "High"
-    else: final_risk = "Critical"
+    # E. Labels
+    if adjusted_safety > 0.75: risk_label = "Low"
+    elif adjusted_safety > 0.40: risk_label = "Moderate"
+    elif adjusted_safety > 0.20: risk_label = "High"
+    else: risk_label = "Critical"
 
-    # Crime Prediction
+    # F. Crime Prediction
     crime_model = crime_artifact["model"]
     base_features = [0, float(lat), float(lon), int(hour), day_enc, slot_enc]
     crime_pred = crime_model.predict([base_features])[0]
     try:
-        final_crime = crime_artifact["le_target"].inverse_transform([crime_pred])[0]
+        crime_label = crime_artifact["le_target"].inverse_transform([crime_pred])[0]
     except:
-        final_crime = str(crime_pred)
+        crime_label = str(crime_pred)
 
-    return final_risk, final_crime, adjusted_safety
+    return risk_label, crime_label, adjusted_safety
