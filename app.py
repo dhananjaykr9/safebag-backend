@@ -3,7 +3,7 @@ import requests
 import os
 from dotenv import load_dotenv
 from sms_alert import send_sms_alert
-# Updated imports
+# Ensure these files exist in your project folder
 from routing import get_fast_route, get_safe_route
 from ml_engine import predict    
 
@@ -17,7 +17,7 @@ DEVICE_ID = "handbag_001"
 
 @app.route("/")
 def home():
-    return "SafeBag Backend Running (Dual Routing Enabled)"
+    return "SafeBag Backend Running (Fixed Version)"
 
 # ---------- Health Check ----------
 @app.route("/status", methods=["GET"])
@@ -32,10 +32,22 @@ def get_location():
         r = requests.get(url, timeout=6)
         data = r.json()
     except Exception as e:
-        return jsonify({"error": "Firebase unreachable"}), 500
+        # Return 200 with error status so App displays it, rather than failing silently
+        return jsonify({
+            "event_type": "SERVER_ERROR", 
+            "latitude": 0.0, 
+            "longitude": 0.0
+        }), 200
 
+    # FIX: Don't return 404. Return 200 with defaults so the App UI updates.
     if not data:
-        return jsonify({"error": "No device data found"}), 404
+        return jsonify({
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "event_type": "WAITING_FOR_DATA",
+            "acknowledged": True,
+            "timestamp": 0
+        }), 200
 
     return jsonify({
         "latitude": data.get("latitude"),
@@ -54,11 +66,9 @@ def route_api():
         end_lat   = float(request.args.get("end_lat"))
         end_lon   = float(request.args.get("end_lon"))
 
-        # Fetch both routes
         fast = get_fast_route(start_lat, start_lon, end_lat, end_lon)
         safe = get_safe_route(start_lat, start_lon, end_lat, end_lon)
 
-        # Return matching the Android RouteResponse data class
         return jsonify({
             "fast_route": fast,
             "safe_route": safe
@@ -74,7 +84,6 @@ def predict_api():
         lat = float(request.args.get("lat"))
         lon = float(request.args.get("lon"))
 
-        # Unpack the 3 values from updated ml_engine
         risk, crime, probability = predict(lat, lon)
         
         return jsonify({
@@ -84,6 +93,26 @@ def predict_api():
         }), 200
     except Exception as e:
         print(f"ML Error: {e}")
+        # Return defaults on error to prevent app crash
+        return jsonify({"risk": "Unknown", "crime": "Unknown", "safety_probability": 0.5}), 200
+
+# ---------- MISSING ROUTE 1: Police Stations ----------
+@app.route("/police", methods=["GET"])
+def get_police():
+    # Placeholder: Return empty list or nearby stations logic
+    return jsonify({
+        "stations": [] 
+    }), 200
+
+# ---------- MISSING ROUTE 2: Send Acknowledge ----------
+@app.route("/send_ack", methods=["POST"])
+def send_ack():
+    try:
+        patch_url = f"{FIREBASE_BASE}/latest_events/{DEVICE_ID}.json"
+        # Update Firebase so the bag stops beeping (if hardware connected)
+        requests.patch(patch_url, json={"acknowledged": True, "event_type": "SAFE"})
+        return jsonify({"status": "acknowledged"}), 200
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # ---------- Manual SOS ----------
@@ -120,7 +149,6 @@ def escalate():
     
     try:
         send_sms_alert(lat, lon, event)
-        # Update Firebase to stop Android polling
         patch_url = f"{FIREBASE_BASE}/latest_events/{DEVICE_ID}.json"
         requests.patch(patch_url, json={"acknowledged": True})
         return jsonify({"status": "success"}), 200
