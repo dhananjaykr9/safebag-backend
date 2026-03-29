@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import requests
 import os
 from dotenv import load_dotenv
@@ -10,7 +11,7 @@ from ml_engine import predict, SYNTHETIC_HOTSPOTS
 load_dotenv()
 
 app = Flask(__name__)
-
+CORS(app)
 # Configuration
 FIREBASE_BASE = os.getenv("FIREBASE_URL")
 DEVICE_ID = "handbag_001"

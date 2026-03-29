@@ -9,3 +9,5 @@ scikit-learn
 networkx
 osmnx
 gunicorn
+
+flask-cors
