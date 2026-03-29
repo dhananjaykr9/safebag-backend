@@ -1,0 +1,16 @@
+Run Backend
+
+From backend folder:
+
+uvicorn main:app --reload
+
+
+Open browser:
+
+http://127.0.0.1:8000/docs
+
+
+You will see your live API playground.
+
+
+CloudMap APO=AIzaSyBrFravhJlsfrgfuEAlY7rw0gEOkwUYp0Q
