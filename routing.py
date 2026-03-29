@@ -18,17 +18,11 @@ def load_graph_if_needed():
     if G_latlon is None:
         print("Loading GraphML... this may take a moment.")
         if os.path.exists(GRAPH_FILE):
-            G_temp = ox.load_graphml(GRAPH_FILE)
-            # Project to lat/lon for coordinate extraction
-            try:
-                G_latlon = ox.project_graph(G_temp, to_crs="EPSG:4326")
-            except Exception:
-                G_latlon = G_temp # Fallback
-            
             # MEMORY OPTIMIZATION for Render 512MB Limit
-            # Force deletion of the duplicated initial graph from RAM
-            if G_temp is not G_latlon:
-                del G_temp
+            # The nagpur_graph.graphml file is natively stored in EPSG:4326 (lat/lon).
+            # We completely skip `ox.project_graph` because projecting it creates a temporary
+            # 2X memory footprint spike that immediately crashes Render's 512MB limit!
+            G_latlon = ox.load_graphml(GRAPH_FILE)
             gc.collect()
         else:
             print("Graph file not found! Safe routing will fail.")
